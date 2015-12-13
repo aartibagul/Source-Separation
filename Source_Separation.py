@@ -8,14 +8,14 @@ import gc
 
 filename = "CML_Recording_Both.wav"
 
-# returns bit array of .wav file 
+# returns bit array of .wav file, and framerate
 def get_wave(filename):
     w = wave.open(filename,"rb")
     waveParams = w.getparams()
     s = w.readframes(waveParams[3])
     w.close()
     waveArray = np.fromstring(s, np.int16)
-    return waveArray
+    return waveArray, waveParams[2]
 
 # power spectrogram is the absolute value SQUARED of the stft
 def get_spectrogram(stft):
@@ -288,7 +288,7 @@ def online_nmf(spectrum, W, H,A, B, rho, beta, eta, eps):
 win_size = 256
 overlap = 128
 # get wave array
-waveArr = get_wave(filename)
+waveArr, framerate = get_wave(filename)
 # compute stft, padded input signal
 stft, wave_pad = my_stft(waveArr, win_size, overlap)
 # get power spectrogram of stft
@@ -312,7 +312,7 @@ rho = r**(beta/spectrum.shape[1])
 #import cProfile
 #cProfile.run('online_nmf(spectrum, W, H, A, B, rho, beta, 1e-6, eps)')
 
-W, H, cost = online_nmf(spectrum, W, H, A, B, rho, beta, 1e-6, eps)
+W, H, cost = online_nmf(spectrum, W, H, A, B, rho, beta, 1e-2, eps)
 
 fig = plt.figure(1)
 plt.plot([i for i in range(len(cost[5:]))], cost[5:])
@@ -320,15 +320,25 @@ plt.xlabel('iteration')
 plt.ylabel('IS divergence')
 fig.savefig("objective_function.png")
 
-# according to Fevotte's Matlab code
+# according to Fevotte's Matlab code (Wiener Filtering + ISTFT)
 V = np.dot(W,H)
 Tpad = win_size + (N-1)*(win_size - overlap);
 
 C = np.zeros((K,Tpad))
 
 for i in range(K):
-    ct = np.dot(W[:,i].reshape(F,1),H[i,:].reshape(1,N))/V * stft
-    print(ct.shape)
-    C[i,:] = np.real( my_istft(ct, win_size, overlap))
+    out_file = 'out-{}.wav'.format(i)
+    w = wave.open(out_file, 'wb')
 
+    w.setnchannels(1)
+    w.setsampwidth(2)
+    w.setframerate(framerate)
+
+    ct = np.dot(W[:,i].reshape(F,1),H[i,:].reshape(1,N))/V * stft
+    s = np.real( my_istft(ct, win_size, overlap))
+    print(s.shape)
+    C[i,:] = s
+
+    w.writeframes(C[i,:])
+    w.close()
 
