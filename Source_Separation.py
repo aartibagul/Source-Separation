@@ -8,7 +8,7 @@ import gc
 
 filename = "CML_Recording_Both.wav"
 
-# returns wave array of filename.wav
+# returns bit array of .wav file 
 def get_wave(filename):
     w = wave.open(filename,"rb")
     waveParams = w.getparams()
@@ -19,7 +19,7 @@ def get_wave(filename):
 
 # power spectrogram is the absolute value SQUARED of the stft
 def get_spectrogram(stft):
-    return np.abs(stft)**2
+    return np.square(np.absolute(stft))
 
 # takes in wave file as input
 # win_size is the length of the window in samples
@@ -30,8 +30,8 @@ def my_stft(wave, win_size, overlap):
     # make the frames
     frames, wave_pad = make_frames(wave, win, overlap)
     # fft, for each column
-    stft = np.fft.fft(frames)
-    # keep the spectrum associated with the positive frequencies (potentially times two the upper frequencies)
+    stft = np.fft.fft(frames, axis = 0)
+    # keep the spectrum associated with the positive frequencies (potentially times to the upper frequencies)
     if len(win)%2 == 0:
         stft = stft[:int(len(win)/2)+1]
     else:
@@ -95,7 +95,7 @@ def my_istft(stft, win_size, overlap):
         stft_full[num_coeff:,:] = np.conj(stft[num_coeff-1:0:-1, :])
         
     # take inverse fft of recovered stft
-    istft = np.fft.ifft(stft_full)
+    istft = np.fft.ifft(stft_full, axis = 0)
     # reconstruct padded signal by taking overlap into account
     x_pad = overlap_add(istft, win_size, overlap)
     return x_pad
@@ -119,7 +119,6 @@ def overlap_add(signal, win_size, overlap):
     for i in range(1,num_frames):
         x_pad[frame_ind[i]:frame_ind[i] + win_size] = x_pad[frame_ind[i]:frame_ind[i] + win_size] + signal[:,i] * win
     return x_pad
-
 
 # Objective functions section
 
@@ -331,4 +330,5 @@ for i in range(K):
     ct = np.dot(W[:,i].reshape(F,1),H[i,:].reshape(1,N))/V * stft
     print(ct.shape)
     C[i,:] = np.real( my_istft(ct, win_size, overlap))
+
 
