@@ -1,38 +1,14 @@
-
-# coding: utf-8
-
-# In[3]:
-
-get_ipython().magic(u'matplotlib inline')
+from __future__ import division
 import numpy as np
 import random
-from __future__ import division
 import wave, struct, numpy as np, matplotlib.mlab as mlab, pylab as pl
+import math
 import matplotlib.pyplot as plt
-
-
-# In[119]:
+import gc
 
 filename = "CML_Recording_Both.wav"
-w = wave.open(filename,"rb")
 
-#returns a named tuple (nchannels, sampwidth, framerate, 
-# nframes, comptype, compname)
-waveParams = w.getparams()
-
-s = w.readframes(waveParams[3])
-w.close()
-waveArray = np.fromstring(s, np.int16)
-
-pl.figure()
-pl.plot(waveArray)
-
-spectrum, freq, bins = mlab.specgram(waveArray, NFFT=256,Fs=waveParams[2],sides='onesided')
-
-
-# In[121]:
-
-# calculates and returns spectrogram of 
+# returns wave array of filename.wav
 def get_wave(filename):
     w = wave.open(filename,"rb")
     waveParams = w.getparams()
@@ -55,7 +31,7 @@ def my_stft(wave, win_size, overlap):
     frames, wave_pad = make_frames(wave, win, overlap)
     # fft, for each column
     stft = np.fft.fft(frames)
-    # keep the spectrum associated with the positive frequencies (potentially times to the upper frequencies)
+    # keep the spectrum associated with the positive frequencies (potentially times two the upper frequencies)
     if len(win)%2 == 0:
         stft = stft[:int(len(win)/2)+1]
     else:
@@ -145,7 +121,7 @@ def overlap_add(signal, win_size, overlap):
     return x_pad
 
 
-# In[132]:
+# Objective functions section
 
 # epsilon divergence
 def compute_obj(v,W,h,eps):
@@ -201,129 +177,83 @@ def compute_smooth_grad(v,W,H,ind_t,lamb,eps):
     # returning properly scaled gradient of smooth objective 
     return div_grad + lamb * sm_grad
     
-
-
-# In[133]:
-
-def grad_checker(v, W, h):
-    eps = 1e-3
-    (f,k) = W.shape
-    t_grad = np.zeros(h.shape)
-    for i in range(k):
-        ei = np.zeros(h.shape)
-        ei[i] = eps
-        t_grad[i] = (compute_obj(v,W,h+ei, 1e-12) - compute_obj(v,W,h-ei,1e-12)) / (2*eps)
-    print(t_grad)
-    print(compute_grad(v,W,h,1e-12))
-    
-grad_checker(np.random.rand(2,1), np.random.rand(2,2),np.random.rand(2, 1))
-
-
-# In[134]:
-
-# second grad checker for smooth objective functions: Works!
-def grad_checker(v,W,H,ind_t,lamb,eps):
-    eps_dif = 1e-3
-    (f,k) = W.shape
-    t_grad = np.zeros(H[:,ind_t].shape)
-    for i in range(k):
-        ei = np.zeros(H.shape)
-        ei[i,ind_t] = eps_dif
-        t_grad[i] = (compute_smooth_obj(v,W,H+ei,ind_t,lamb,eps) - compute_smooth_obj(v,W,H-ei,ind_t,lamb,eps)) / (2*eps_dif)
-    print(t_grad)
-    print(compute_smooth_grad(v,W,H,ind_t,lamb,eps))
-grad_checker(np.random.rand(2,1), np.random.rand(2,2),np.random.rand(2, 3),1,1,1e-12)
-
-
-# In[135]:
-
+# gradient descent function
 def gradient_backtracking(v, W, h, max_iter, compute_grad, compute_obj, eps):
     
     v = v.reshape(v.shape[0],1)
-  
-    beta = 0.5 #backstep factor between 0.1 and 0.8
-    opt_prec = 1-1e-4 # optimization precision
-    n = 1e-1 #initial step size
+    h = h.reshape(h.shape[0],1)
+
+    beta = 0.2 #backstep factor between 0.1 and 0.8
+    opt_prec = 1-1e-6 # optimization precision
+    eta = 1e-1 #initial step size
     
-    h = np.random.rand(W.shape[1], 1)
+    #obj = [None]*max_iter
     
-    obj = [None]*max_iter
-    
-    max_backstep = 100 # maximum number of backsteps
+    max_backstep = 20 # maximum number of backsteps
     t = 0 # backstepping counter
     k = 0 # gradient step counter 
     
+    old_obj = compute_obj(v,W,h,eps)
+
     while( k < max_iter and t != max_backstep ):
         
         grad = compute_grad(v,W,h,eps)
-        obj[k] = compute_obj(v,W,h,eps)
+        #obj[k] = compute_obj(v,W,h,eps)
         
         t = 0 # reset backstepping counter
-        n = 1/beta*n # try to increase stepsize slightly again
+        eta = 1/beta*eta # try to increase stepsize slightly again
         
         # make sure h-n*grad is positive
-        while(any(h - n * grad < 0)  and t < max_backstep ):
+        while(any(h - eta * grad < 0)  and t < max_backstep ):
             t += 1
-            n = beta * n
+            eta = beta * eta
     
-        new_obj = compute_obj(v,W,(h - n*grad),eps)
-        while( new_obj > opt_prec * compute_obj(v,W,h,eps) and t < max_backstep):
+        new_obj = compute_obj(v,W,(h - eta*grad),eps)
+        
+        while( new_obj > opt_prec * old_obj and t < max_backstep):
             t += 1
-            n = beta * n
-            new_obj = abs(compute_obj(v,W,(h - n*grad),eps))
+            eta = beta * eta
+            new_obj = abs(compute_obj(v,W,(h - eta*grad),eps))
                       
-        h = h - n * grad # update h according to gradient step
+        h = h - eta * grad # update h according to gradient step
         k += 1 # update gradient step counter
-       
+        old_obj = new_obj
+        
     h = h.reshape(h.shape[0],)
-    return h, obj[0:int(k)]
-
-h, obj = gradient_backtracking(np.random.rand(10,1), np.random.rand(10,2),  np.random.rand(2, 1), 100, compute_grad, compute_obj, 1e-12)
-
-
-# In[136]:
-
-index = [i for i in range(10)]
-plt.title("On training data")
-plt.plot([i for i in range(len(obj))], obj)
-
-
-# In[137]:
+    return h
 
 def online_nmf(spectrum, W, H,A, B, rho, beta, eta, eps):
            
-    H = H.T
     a = np.zeros(W.shape)
     b = np.zeros(W.shape)
     
     t = 1
-    W_old = W + 2*eta
+    W_old = W + 1.5*eta
     k = W.shape[1]
     h = np.random.rand(W.shape[1],)
-    h_old = h
-    
+    n = spectrum.shape[1]
     cost = []
-    cost.append(compute_obj(spectrum,W,H.T,eps))
+    cost.append(compute_obj(spectrum,W,H,eps))
     
     while np.linalg.norm(W - W_old, ord = "fro") > eta:
         
-        
         t = t+1 
         
-        ind = random.randint(0, len(spectrum.T)-1)
-        v = spectrum.T[ind]
-        h_old = h
-        h, obj = gradient_backtracking(v, W, h_old, 100, compute_grad, compute_obj, 1e-12)
-       
-        H[ind] = h
+        ind = random.randint(0, n-1)
+        v = spectrum[:,ind]
+    
+        h = gradient_backtracking(v, W, H[:,ind], 100, compute_grad, compute_obj, eps)
+        
+        H[:, ind] = h
        
         h = h.reshape(h.shape[0],1)
         v = v.reshape(v.shape[0],1)
         den = eps + np.dot(W, h)
         
-        a += np.dot(np.dot(((eps+v)/(eps+den)**2), h.T), np.dot(W.T,W))
-        b += np.dot(1/den, h.T)
+        a += np.dot(((eps+v)/(den)**2), h.T) * np.square(W) 
         
+        b += np.dot(1/den, h.T)
+       
         if t % beta == 0:
             A = A + rho*a
             a = 0
@@ -338,156 +268,57 @@ def online_nmf(spectrum, W, H,A, B, rho, beta, eta, eps):
                 A[:,i] = A[:,i]/s
                 B[:,i] = B[:,i]*s
                 #print(i)
-                
-        if t > 1000:
+
+            #print(np.linalg.norm(compute_obj(spectrum,W_old,H,eps))- compute_obj(spectrum,W,H,eps)) 
+            gc.disable()
+            cost.append(compute_obj(spectrum,W,H,eps))
+            gc.enable()
+            
+        #cost.append(compute_obj(spectrum,W,H,eps))
+        if t > 100*n:
             print(" W shape" , W.shape)
             break
 
-        
         #print("W", np.linalg.norm(W[:,1]))
         #print("H", np.linalg.norm(H[1]))
-        cost.append(compute_obj(spectrum,W,H.T,eps))
         #print(compute_obj(spectrum,W,H.T,eps))
+        
     print("t" , t)
-    return W, H.T, cost
+    print(cost[-1])
+    return W, H, cost
 
+win_size = 256
+overlap = 128
+# get wave array
+waveArr = get_wave(filename)
+# compute stft, padded input signal
+stft, wave_pad = my_stft(waveArr, win_size, overlap)
+# get power spectrogram of stft
+spectrum = get_spectrogram(stft)
 
-# In[138]:
-
-np.linalg.norm(spectrum[:,4])
-
-
-# In[148]:
-
-eps = 1e-6
+eps = 1e-12
 v = spectrum.T[0]
 K = 10
-W = np.random.rand(spectrum.shape[0],K)
-H = np.random.rand(K, spectrum.shape[1])
+W = abs(np.random.randn(spectrum.shape[0],K) + np.ones((spectrum.shape[0],K)))
+H = np.zeros((K, spectrum.shape[1]))
+#abs(np.random.randn(K, spectrum.shape[1]) + np.ones((K, spectrum.shape[1])))
 
 A = np.zeros(W.shape)
 B = np.zeros(W.shape)
 
+r = 1
+beta = 100
+rho = r**(beta/spectrum.shape[1])
 
-W, H, cost = online_nmf(spectrum, W, H, A, B, 0.5, 10, 1e-2, eps)
+# for profiling:
+#import cProfile
+#cProfile.run('online_nmf(spectrum, W, H, A, B, rho, beta, 1e-6, eps)')
 
+W, H, cost = online_nmf(spectrum, W, H, A, B, rho, beta, 1e-8, eps)
 
-# In[79]:
-
-cost
-
-
-# In[149]:
-
-plt.semilogy([i for i in range(len(cost))], cost)
-
-
-# In[141]:
-
-W.shape
-
-
-# In[142]:
-
-H.shape
-
-
-# In[143]:
-
-spectrum.shape
-
-
-# In[144]:
-
-def get_closest(x, centers):
-    distances = []
-    
-    #get the distance from the point(x) to every centroid
-    #and get the index of centroid that yields 
-    #the minimum distance 
-    
-    for mu in centers:
-        distances.append(np.linalg.norm(x-mu))
-    index = np.argmin(distances)
-    
-    return index, min(distances)
-
-def k_means_objective(X, k, C, centers):
-    
-    sum_distance = 0
-    for j in range(k):
-        for x in X[C==j]:
-            sum_distance += (np.linalg.norm(x-centers[j]))**2
-                
-    return sum_distance
-
-
-# In[158]:
-
-def mini_batch(X, k, b, max_iter):
-    v = [0]*k
-    centers = random.sample(X, k)
-    distortion = []
-  
-    for i in range(max_iter):
-        M = random.sample(X,b)
-        C=[0]*len(M)
-        for i,x in enumerate(M): 
-            index = get_closest(x, centers)[0]
-            C[i] = index
-      
-        
-        for i, x in enumerate(M):
-            index = C[i]
-            v[index]+=1
-            n = 1/v[index]
-    
-            centers[index] = (1- n)*centers[index] + n*x
-        '''
-        D=[0]*len(X)
-        for i in range(len(X)): 
-            index = get_closest(X[i], centers)[0]
-            D[i] = index
-        
-        D = np.array(D)
-        
-        distortion.append(k_means_objective(X, k, D, centers))
-        '''
-            
-    return centers
-
-
-# In[160]:
-
-K = 10
-centers = mini_batch(spectrum.T, K, 100, 100)
-centers = np.array(centers)
-W2 = centers.T
-
-
-# In[161]:
-
-plt.plot([i for i in range(len(distortion))], distortion)
-
-
-# In[162]:
-
-v2 = spectrum.T[0]
-
-H2 = np.zeros((K, spectrum.shape[1]))
-
-A2 = np.zeros(W2.shape)
-B2 = np.zeros(W2.shape)
-
-W2, H2, cost2 = online_nmf(spectrum, W2, H2, A2, B2, 0.5, 10, 1e-2, eps)
-
-
-# In[163]:
-
-plt.plot([i for i in range(len(cost2))], cost2)
-
-
-# In[ ]:
-
-
+fig = plt.figure(1)
+plt.plot([i for i in range(len(cost[5:]))], cost[5:])
+plt.xlabel('iteration')
+plt.ylabel('IS divergence')
+fig.savefig("objective_function.png")
 
