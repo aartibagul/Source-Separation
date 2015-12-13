@@ -5,7 +5,9 @@ import wave, struct, numpy as np, matplotlib.mlab as mlab, pylab as pl
 import math
 import matplotlib.pyplot as plt
 import gc
-
+from scipy.io import wavfile
+#"CML_Recording_Both.wav"
+#"data.wav"
 filename = "CML_Recording_Both.wav"
 
 # returns bit array of .wav file, and framerate
@@ -17,9 +19,17 @@ def get_wave(filename):
     waveArray = np.fromstring(s, np.int16)
     return waveArray, waveParams[2]
 
+# returns wave array of one track of stereo .wav file
+# activate line 2 to convert from stereo file
+def get_wave_stereo(filename):
+    rate, data = wavfile.read(filename)
+    data = data[:,0]
+    return data, rate
+
 # power spectrogram is the absolute value SQUARED of the stft
 def get_spectrogram(stft):
-    return np.square(np.absolute(stft))
+    stft[0,:] = stft[0,:]/2
+    return 4*np.square(np.absolute(stft))
 
 # takes in wave file as input
 # win_size is the length of the window in samples
@@ -122,7 +132,8 @@ def overlap_add(signal, win_size, overlap):
 
 # Objective functions section
 
-# epsilon divergence
+# OLD OBJECTIVES
+'''
 def compute_obj(v,W,h,eps):
     whv = (np.dot(W,h) + eps)/(v + eps)
     div = whv - np.log(whv) - 1 
@@ -134,6 +145,17 @@ def compute_obj(v,W,h,eps):
 def compute_grad(v,W,h,eps):
     grad = np.dot(W.T, (1/(v + eps) - 1/(np.dot(W,h) + eps)))
     return grad
+'''
+
+def compute_obj(v,W,h,eps):
+    vhw = (v + eps) / (np.dot(W,h) + eps)
+    div = vhw - np.log(vhw) - 1
+    return np.sum( div )
+
+def compute_grad(v,W,h,eps):
+    (F,K) = W.shape
+    grad = np.dot( ( 1 / (np.dot(W,h + eps)) - (v + eps) / (np.square(np.dot(W,h))) + eps).T , W )
+    return grad.T
 
 # important! 
 # Not only do we need h = h_t but also h_m = h_(t-1) and h_p = h_(t+1)
@@ -175,6 +197,7 @@ def compute_smooth_grad(v,W,h,h_m,h_p,lamb,eps):
     
     # returning properly scaled gradient of smooth objective 
     return div_grad + lamb * sm_grad
+
 # gradient descent function
 def gradient_backtracking(v, W, h, max_iter, compute_grad, compute_obj, eps):
     
@@ -288,7 +311,11 @@ def online_nmf(spectrum, W, H,A, B, rho, beta, eta, eps):
 win_size = 256
 overlap = 128
 # get wave array
-waveArr, framerate = get_wave(filename)
+waveArr, framerate = get_wave_stereo(filename)
+# normalize wave_arr (int16)
+waveArr = waveArr.astype(np.float64)
+#waveArr = waveArr/32768
+
 # compute stft, padded input signal
 stft, wave_pad = my_stft(waveArr, win_size, overlap)
 # get power spectrogram of stft
@@ -297,8 +324,8 @@ spectrum = get_spectrogram(stft)
 eps = 1e-12
 (F,N) = spectrum.shape
 K = 10
-W = abs(np.random.randn(F,K) + np.ones((F,K)))
-H = np.zeros((K, N))
+W = abs(np.random.randn(F,K)) + np.ones((F,K))
+H = abs(np.random.randn(K,N)) + np.ones((K, N))
 #abs(np.random.randn(K, spectrum.shape[1]) + np.ones((K, spectrum.shape[1])))
 
 A = np.zeros(W.shape)
@@ -312,7 +339,7 @@ rho = r**(beta/spectrum.shape[1])
 #import cProfile
 #cProfile.run('online_nmf(spectrum, W, H, A, B, rho, beta, 1e-6, eps)')
 
-W, H, cost = online_nmf(spectrum, W, H, A, B, rho, beta, 1e-2, eps)
+W, H, cost = online_nmf(spectrum, W, H, A, B, rho, beta, 1e-4, eps)
 
 fig = plt.figure(1)
 plt.plot([i for i in range(len(cost[5:]))], cost[5:])
@@ -322,23 +349,28 @@ fig.savefig("objective_function.png")
 
 # according to Fevotte's Matlab code (Wiener Filtering + ISTFT)
 V = np.dot(W,H)
-Tpad = win_size + (N-1)*(win_size - overlap);
 
+'''
+print('spec norm: ', np.linalg.norm(spectrum))
+print('V norm: ', np.linalg.norm(V))
+print(np.linalg.norm(V-spectrum))
+print('V dtype ', V.dtype)
+print('spec dtype ', spectrum.dtype)
+'''
+
+Tpad = win_size + (N-1)*(win_size - overlap);
 C = np.zeros((K,Tpad))
 
 for i in range(K):
-    out_file = 'out-{}.wav'.format(i)
-    w = wave.open(out_file, 'wb')
-
-    w.setnchannels(1)
-    w.setsampwidth(2)
-    w.setframerate(framerate)
-
+    
+    ct = np.zeros(V.shape)
     ct = np.dot(W[:,i].reshape(F,1),H[i,:].reshape(1,N))/V * stft
+    ct[np.isnan(ct)] = 0
     s = np.real( my_istft(ct, win_size, overlap))
-    print(s.shape)
+
+    # scale it back to int16
+    #s = s * 32768
+    s = s.astype(np.int16)
+
     C[i,:] = s
-
-    w.writeframes(C[i,:])
-    w.close()
-
+    wavfile.write('out-{}.wav'.format(i), framerate, s)
