@@ -136,15 +136,14 @@ def compute_grad(v,W,h,eps):
     grad = np.dot(W.T, (1/(v + eps) - 1/(np.dot(W,h) + eps)))
     return grad
 
-# important! input here has to be the matrix H, not the vector h_t
-# this is because we need h_t but also h_(t-1) and h_(t+1)
-# ind_t is the index of h_t in H
+# important! 
+# Not only do we need h = h_t but also h_m = h_(t-1) and h_p = h_(t+1)
 # lambda is the smoothness constant
-def compute_smooth_obj(v,W,H,ind_t,lamb,eps):
+def compute_smooth_obj(v,W,h,h_m,h_p,lamb,eps):
     
-    # get the column h_t
-    h = H[:,ind_t]
     h = h.reshape(h.shape[0],1)
+    h_m = h_m.reshape(h_m.shape[0],1)
+    h_p = h_p.reshape(h_p.shape[0],1)
     
     # compute regular objective
     # maybe doing this direct instead of the function call is faster:
@@ -152,31 +151,31 @@ def compute_smooth_obj(v,W,H,ind_t,lamb,eps):
     # div = whv - np.log(whv) - 1 
     div = compute_obj(v,W,h,eps)
     
-    # compute smoothness terms
-    s1 = H[:,ind_t]/H[:,ind_t-1]
-    s2 = H[:,ind_t]/H[:,ind_t+1]
+    # compute smoothness terms with epsilon
+    s1 = (h + eps) / (h_m + eps)
+    s2 = (h + eps) / (h_p + eps)
     sm = s1 - np.log(s1) - 1
     sm += s2 - np.log(s2) - 1
     # returning properly scaled smooth objective
     return div + lamb * np.sum( sm )
     
 # input parameters as above
-def compute_smooth_grad(v,W,H,ind_t,lamb,eps):
-    
-    # get the column h_t
-    h = H[:,ind_t]
+def compute_smooth_grad(v,W,h,h_m,h_p,lamb,eps):
+
+    # the famous reshape trio
     h = h.reshape(h.shape[0],1)
-    
+    h_m = h_m.reshape(h_m.shape[0],1)
+    h_p = h_p.reshape(h_p.shape[0],1)
+
     # calculates gradient of regular divergence
     div_grad = compute_grad(v,W,h,eps)
 
     # calculating gradient of smoothness term
-    sm_grad = 1/H[:,ind_t-1] + 1/H[:,ind_t+1] - 2/H[:,ind_t]
+    sm_grad = 1 / (h_m + eps) + 1 / (h_p + eps) - 2 / (h + eps)
     sm_grad = sm_grad.reshape(sm_grad.shape[0],1)
     
     # returning properly scaled gradient of smooth objective 
     return div_grad + lamb * sm_grad
-    
 # gradient descent function
 def gradient_backtracking(v, W, h, max_iter, compute_grad, compute_obj, eps):
     
@@ -297,10 +296,10 @@ stft, wave_pad = my_stft(waveArr, win_size, overlap)
 spectrum = get_spectrogram(stft)
 
 eps = 1e-12
-v = spectrum.T[0]
+(F,N) = spectrum.shape
 K = 10
-W = abs(np.random.randn(spectrum.shape[0],K) + np.ones((spectrum.shape[0],K)))
-H = np.zeros((K, spectrum.shape[1]))
+W = abs(np.random.randn(F,K) + np.ones((F,K)))
+H = np.zeros((K, N))
 #abs(np.random.randn(K, spectrum.shape[1]) + np.ones((K, spectrum.shape[1])))
 
 A = np.zeros(W.shape)
@@ -314,11 +313,22 @@ rho = r**(beta/spectrum.shape[1])
 #import cProfile
 #cProfile.run('online_nmf(spectrum, W, H, A, B, rho, beta, 1e-6, eps)')
 
-W, H, cost = online_nmf(spectrum, W, H, A, B, rho, beta, 1e-8, eps)
+W, H, cost = online_nmf(spectrum, W, H, A, B, rho, beta, 1e-6, eps)
 
 fig = plt.figure(1)
 plt.plot([i for i in range(len(cost[5:]))], cost[5:])
 plt.xlabel('iteration')
 plt.ylabel('IS divergence')
 fig.savefig("objective_function.png")
+
+# according to Fevotte's Matlab code
+V = np.dot(W,H)
+Tpad = win_size + (N-1)*(win_size - overlap);
+
+C = np.zeros((K,Tpad))
+
+for i in range(K):
+    ct = np.dot(W[:,i].reshape(F,1),H[i,:].reshape(1,N))/V * stft
+    print(ct.shape)
+    C[i,:] = np.real( my_istft(ct, win_size, overlap))
 
