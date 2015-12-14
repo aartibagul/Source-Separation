@@ -6,6 +6,7 @@ import math
 import matplotlib.pyplot as plt
 import gc
 from scipy.io import wavfile
+from mini_batch import mini_batch
 #"CML_Recording_Both.wav"
 #"data.wav"
 filename = "CML_Recording_Both.wav"
@@ -341,22 +342,40 @@ rho = r**(beta/spectrum.shape[1])
 
 W, H, cost = online_nmf(spectrum, W, H, A, B, rho, beta, 1e-4, eps)
 
+'''
+Initialization with mini batch
+'''
+
+centers = mini_batch(spectrum.T, K, 100, 100)
+centers = np.array(centers)
+W2 = centers.T
+
+H2 = abs(np.random.randn(K,N)) + np.ones((K, N))
+A2 = np.zeros(W.shape)
+B2 = np.zeros(W.shape)
+
+W2, H2, cost2 = online_nmf(spectrum, W2, H2, A2, B2, rho, beta, 1e-4, eps)
+
+
 fig = plt.figure(1)
-plt.plot([i for i in range(len(cost[5:]))], cost[5:])
+plt.plot([i for i in range(len(cost))], cost, label = "Without k-means")
+plt.plot([i for i in range(len(cost2))], cost2, label = "With k-means")
+plt.legend(loc="upper right")
 plt.xlabel('iteration')
 plt.ylabel('IS divergence')
 fig.savefig("objective_function.png")
 
+'''
 # according to Fevotte's Matlab code (Wiener Filtering + ISTFT)
 V = np.dot(W,H)
 
-'''
+
 print('spec norm: ', np.linalg.norm(spectrum))
 print('V norm: ', np.linalg.norm(V))
 print(np.linalg.norm(V-spectrum))
 print('V dtype ', V.dtype)
 print('spec dtype ', spectrum.dtype)
-'''
+
 
 Tpad = win_size + (N-1)*(win_size - overlap);
 C = np.zeros((K,Tpad))
@@ -374,3 +393,4 @@ for i in range(K):
 
     C[i,:] = s
     wavfile.write('out-{}.wav'.format(i), framerate, s)
+'''
