@@ -8,6 +8,7 @@ import gc
 from scipy.io import wavfile
 import nmf
 from stft import sinebell
+
 def my_istft(stft, win_size, overlap):
     # power sinbell analysis window
     win = sinebell(win_size, overlap)

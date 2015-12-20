@@ -16,8 +16,9 @@ def compute_obj(v,W,h,eps):
 
 def compute_grad(v,W,h,eps):
     (F,K) = W.shape
-    grad = np.dot( ( 1 / (np.dot(W,h + eps)) - (v + eps) / (np.square(np.dot(W,h))) + eps).T , W )
-    return grad.T
+    wh = np.dot(W,h)
+    grad = np.dot(W.T, (1 / ( wh + eps) - (v + eps) / (np.square(wh) + eps)) )
+    return grad
 
 # important! 
 # Not only do we need h = h_t but also h_m = h_(t-1) and h_p = h_(t+1)
@@ -66,13 +67,13 @@ def gradient_backtracking(v, W, h, max_iter, compute_grad, compute_obj, eps):
     v = v.reshape(v.shape[0],1)
     h = h.reshape(h.shape[0],1)
 
-    beta = 0.2 #backstep factor between 0.1 and 0.8
+    beta = .1 #backstep factor between 0.1 and 0.8
     opt_prec = 1-1e-6 # optimization precision
     eta = 1e-1 #initial step size
     
     #obj = [None]*max_iter
     
-    max_backstep = 20 # maximum number of backsteps
+    max_backstep = 30 # maximum number of backsteps
     t = 0 # backstepping counter
     k = 0 # gradient step counter 
     
@@ -100,8 +101,9 @@ def gradient_backtracking(v, W, h, max_iter, compute_grad, compute_obj, eps):
                       
         h = h - eta * grad # update h according to gradient step
         k += 1 # update gradient step counter
+
         old_obj = new_obj
-        
+
     h = h.reshape(h.shape[0],)
     return h
 

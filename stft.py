@@ -32,14 +32,6 @@ def sinebell(win_size, overlap):
     win[win_size - overlap:] = np.sin( math.pi * (win_size - np.array([i for i in range(win_size-overlap, win_size)]) - 1 ) / (2*(overlap - 1)) )
     return win
 
-# computes sinebell window with smooth edges, this should be an improvement
-def power_sinebell(win_size, overlap):
-    win = np.zeros(win_size)
-    win[0:overlap] = np.sin( math.pi * (np.array([i for i in range(overlap)])) / (2*(overlap-1)) )**2
-    win[overlap : win_size - overlap] = 1
-    win[win_size - overlap:] = np.sin( math.pi * (win_size - np.array([i for i in range(win_size-overlap, win_size)]) - 1 ) / (2*(overlap - 1)) )**2
-    return win
-
 # x is the input signal, win is the analysis window, overlap
 # returns frame matrix and padded input signal x_pad
 def make_frames(x, win, overlap):

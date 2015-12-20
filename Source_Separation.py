@@ -6,17 +6,23 @@ import math
 import matplotlib.pyplot as plt
 import gc
 from scipy.io import wavfile
+import sys
+import cProfile
+
+# Our implementations
 from mini_batch import mini_batch
 import istft 
 import nmf
 import stft
-import sys
+
+
+# Filename of input soundfile
 #"CML_Recording_Both.wav"
 #"data.wav"
-filename = "data.wav"
+filename = "Mary.wav"
 w = wave.open(filename,"rb")
 
-# returns bit array of .wav file, and framerate
+# returns bit array of mono .wav file, and framerate
 def get_wave(filename):
     w = wave.open(filename,"rb")
     waveParams = w.getparams()
@@ -34,24 +40,26 @@ def get_wave_stereo(filename):
 
 # power spectrogram is the absolute value SQUARED of the stft
 def get_spectrogram(stft):
-    stft[0,:] = stft[0,:]/2
-    return 4*np.square(np.absolute(stft))
+    return np.square(np.absolute(stft))
 
-
+# define input parameters ofr stft
 win_size = 256
 overlap = 128
+
 # get wave array
 waveArr, framerate = get_wave_stereo(filename)
+
 # normalize wave_arr (int16)
 waveArr = waveArr.astype(np.float64)
 #waveArr = waveArr/32768
 
 # compute stft, padded input signal
 stft, wave_pad = stft.my_stft(waveArr, win_size, overlap)
+
 # get power spectrogram of stft
 spectrum = get_spectrogram(stft)
 
-eps = 0
+eps = 1e-12
 (F,N) = spectrum.shape
 K = 10
 W = abs(np.random.randn(F,K)) + np.ones((F,K))
@@ -67,9 +75,9 @@ rho = r**(beta/spectrum.shape[1])
 
 # for profiling:
 #import cProfile
-#cProfile.run('online_nmf(spectrum, W, H, A, B, rho, beta, 1e-6, eps)')
+#cProfile.run('nmf.online_nmf(spectrum, W, H, A, B, rho, beta, 1e-3, eps)')
 
-W, H, cost = nmf.online_nmf(spectrum, W, H, A, B, rho, beta, 1e-4, eps)
+W, H, cost = nmf.online_nmf(spectrum, W, H, A, B, rho, beta, 1e-5, eps)
 
 '''
 Initialization with mini batch
@@ -101,6 +109,8 @@ plt.legend(loc="upper right")
 plt.xlabel('iteration')
 plt.ylabel('IS divergence')
 fig.savefig("objective_function.png")
+
+
 # according to Fevotte's Matlab code (Wiener Filtering + ISTFT)
 V = np.dot(W,H)
 
@@ -118,19 +128,20 @@ C = np.zeros((K,Tpad))
 for i in range(K):
     
     ct = np.zeros(V.shape)
-    ct = (np.dot(W[:,i].reshape(F,1),H[i,:].reshape(1,N))/V) * stft
-    ct[np.isnan(ct)] = 0
-    s1 = np.real( istft.my_istft(ct, win_size, overlap))
 
-    
+    ct = (np.dot(W[:,i].reshape(F,1),H[i,:].reshape(1,N))/V) * stft
+
+    ct[np.isnan(ct)] = 0
+
+    s1 = np.real( istft.my_istft(ct, win_size, overlap))
 
     # scale it back to int16
     #s = s * 32768
     #print("Before:", max(s1))
-    #s1 = s1.astype(np.int16)
+    s1 = s1.astype(np.int16)
     #print("After:", max(s1))
     #for j in range(len(s1)):
-        #s1[j] += random.randint(-10000,10000)
+    #   s1[j] += random.randint(-10000,10000)
     C[i,:] = s1
     #s1 = s1.tolist()
     #print(s1.shape)
